@@ -89,22 +89,21 @@ jobs:
         run: |
           docker compose up -d
 
-      - name: Wait for services
+            - name: Wait for services
         run: |
+          echo "Waiting for services..."
+
           for i in {1..60}; do
-
-            KAFKA_STATUS=$(docker inspect -f '{{.State.Health.Status}}' kafka 2>/dev/null || true)
-
             POSTGRES_STATUS=$(docker inspect -f '{{.State.Health.Status}}' online_retail_postgres 2>/dev/null || true)
-
+            KAFKA_STATUS=$(docker inspect -f '{{.State.Health.Status}}' kafka 2>/dev/null || true)
             ZOOKEEPER_STATUS=$(docker inspect -f '{{.State.Health.Status}}' zookeeper 2>/dev/null || true)
 
-            echo "Kafka: $KAFKA_STATUS"
             echo "PostgreSQL: $POSTGRES_STATUS"
+            echo "Kafka: $KAFKA_STATUS"
             echo "Zookeeper: $ZOOKEEPER_STATUS"
 
-            if [ "$KAFKA_STATUS" = "healthy" ] &&
-               [ "$POSTGRES_STATUS" = "healthy" ] &&
+            if [ "$POSTGRES_STATUS" = "healthy" ] &&
+               [ "$KAFKA_STATUS" = "healthy" ] &&
                [ "$ZOOKEEPER_STATUS" = "healthy" ]; then
               echo "All services are healthy."
               break
@@ -115,8 +114,8 @@ jobs:
 
           docker compose ps
 
-          test "$(docker inspect -f '{{.State.Health.Status}}' kafka)" = "healthy"
           test "$(docker inspect -f '{{.State.Health.Status}}' online_retail_postgres)" = "healthy"
+          test "$(docker inspect -f '{{.State.Health.Status}}' kafka)" = "healthy"
           test "$(docker inspect -f '{{.State.Health.Status}}' zookeeper)" = "healthy"
 
       - name: Create Kafka topics
