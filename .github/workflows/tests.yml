@@ -1,0 +1,155 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+
+  # -------------------------
+  # UNIT TESTS
+  # -------------------------
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run unit tests
+        run: |
+          pytest -v -m "not integration"
+
+
+  # -------------------------
+  # INTEGRATION TESTS
+  # -------------------------
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+
+    env:
+      KAFKA_BOOTSTRAP_SERVERS: localhost:9092
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5433"
+      POSTGRES_DB: online_retail
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+
+      KAFKA_TOPIC: online_retail
+      KAFKA_DLQ_TOPIC: online_retail_dlq
+      KAFKA_STARTING_OFFSETS: earliest
+      KAFKA_FAIL_ON_DATA_LOSS: "true"
+
+      CHECKPOINT_LOCATION: ./checkpoints/test
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Start Docker services
+        run: |
+          docker compose up -d
+
+      - name: Wait for services
+        run: |
+          for i in {1..60}; do
+
+            KAFKA_STATUS=$(docker inspect -f '{{.State.Health.Status}}' kafka 2>/dev/null || true)
+
+            POSTGRES_STATUS=$(docker inspect -f '{{.State.Health.Status}}' online_retail_postgres 2>/dev/null || true)
+
+            ZOOKEEPER_STATUS=$(docker inspect -f '{{.State.Health.Status}}' zookeeper 2>/dev/null || true)
+
+            echo "Kafka: $KAFKA_STATUS"
+            echo "PostgreSQL: $POSTGRES_STATUS"
+            echo "Zookeeper: $ZOOKEEPER_STATUS"
+
+            if [ "$KAFKA_STATUS" = "healthy" ] &&
+               [ "$POSTGRES_STATUS" = "healthy" ] &&
+               [ "$ZOOKEEPER_STATUS" = "healthy" ]; then
+              echo "All services are healthy."
+              break
+            fi
+
+            sleep 2
+          done
+
+          docker compose ps
+
+          test "$(docker inspect -f '{{.State.Health.Status}}' kafka)" = "healthy"
+          test "$(docker inspect -f '{{.State.Health.Status}}' online_retail_postgres)" = "healthy"
+          test "$(docker inspect -f '{{.State.Health.Status}}' zookeeper)" = "healthy"
+
+      - name: Create Kafka topics
+        run: |
+          docker compose exec -T kafka \
+            kafka-topics \
+            --bootstrap-server localhost:9092 \
+            --create \
+            --if-not-exists \
+            --topic online_retail \
+            --partitions 3 \
+            --replication-factor 1
+
+          docker compose exec -T kafka \
+            kafka-topics \
+            --bootstrap-server localhost:9092 \
+            --create \
+            --if-not-exists \
+            --topic online_retail_dlq \
+            --partitions 3 \
+            --replication-factor 1
+
+      - name: Run integration tests
+        run: |
+          pytest -v -m integration
+
+      - name: Show Docker logs on failure
+        if: failure()
+        run: |
+          docker compose ps
+          docker compose logs --tail=200
+
+      - name: Stop Docker services
+        if: always()
+        run: |
+          docker compose down -v --remove-orphans

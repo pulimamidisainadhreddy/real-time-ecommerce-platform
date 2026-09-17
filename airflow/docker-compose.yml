@@ -1,0 +1,12 @@
+services:
+
+  airflow:
+    image: apache/airflow:3.3.1
+    container_name: airflow
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+    command: standalone

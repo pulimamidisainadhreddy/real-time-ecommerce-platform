@@ -1,2 +1,6 @@
-kafka-python
 pandas
+openpyxl
+kafka-python
+python-dotenv
+pyspark==4.2.0
+psycopg2-binary
