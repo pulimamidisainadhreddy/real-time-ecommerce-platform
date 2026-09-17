@@ -15,6 +15,9 @@ jobs:
     name: Unit Tests
     runs-on: ubuntu-latest
 
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+
     steps:
 
       - name: Checkout repository
@@ -39,7 +42,7 @@ jobs:
 
       - name: Run unit tests
         run: |
-          pytest -v -m "not integration"
+          pytest -v --ignore=tests/integration
 
 
   # =========================
@@ -50,6 +53,8 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
+      PYTHONPATH: ${{ github.workspace }}
+
       KAFKA_BOOTSTRAP_SERVERS: localhost:9092
 
       POSTGRES_HOST: localhost
@@ -93,7 +98,7 @@ jobs:
 
       - name: Wait for PostgreSQL and Kafka
         run: |
-          echo "Waiting for PostgreSQL and Kafka..."
+          echo "Waiting for services..."
 
           for i in {1..60}; do
 
@@ -127,16 +132,13 @@ jobs:
             sleep 2
           done
 
-          echo "Final service status:"
           docker compose ps
 
-          echo "Checking PostgreSQL..."
           docker compose exec -T postgres \
             pg_isready \
             -U postgres \
             -d online_retail
 
-          echo "Checking Kafka..."
           docker compose exec -T kafka \
             kafka-topics \
             --bootstrap-server localhost:9092 \
