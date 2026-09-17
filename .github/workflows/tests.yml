@@ -8,14 +8,15 @@ on:
 
 jobs:
 
-  # -------------------------
+  # =========================
   # UNIT TESTS
-  # -------------------------
+  # =========================
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -41,9 +42,9 @@ jobs:
           pytest -v -m "not integration"
 
 
-  # -------------------------
+  # =========================
   # INTEGRATION TESTS
-  # -------------------------
+  # =========================
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
@@ -65,6 +66,7 @@ jobs:
       CHECKPOINT_LOCATION: ./checkpoints/test
 
     steps:
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -89,35 +91,56 @@ jobs:
         run: |
           docker compose up -d
 
-      - name: Wait for services
+      - name: Wait for PostgreSQL and Kafka
         run: |
-          echo "Waiting for services..."
+          echo "Waiting for PostgreSQL and Kafka..."
 
           for i in {1..60}; do
 
-            POSTGRES_STATUS=$(docker inspect -f '{{.State.Health.Status}}' online_retail_postgres 2>/dev/null || true)
-            KAFKA_STATUS=$(docker inspect -f '{{.State.Health.Status}}' kafka 2>/dev/null || true)
-            ZOOKEEPER_STATUS=$(docker inspect -f '{{.State.Health.Status}}' zookeeper 2>/dev/null || true)
+            POSTGRES_OK=false
+            KAFKA_OK=false
 
-            echo "PostgreSQL: $POSTGRES_STATUS"
-            echo "Kafka: $KAFKA_STATUS"
-            echo "Zookeeper: $ZOOKEEPER_STATUS"
+            if docker compose exec -T postgres \
+              pg_isready \
+              -U postgres \
+              -d online_retail \
+              > /dev/null 2>&1; then
+              POSTGRES_OK=true
+            fi
 
-            if [ "$POSTGRES_STATUS" = "healthy" ] && \
-               [ "$KAFKA_STATUS" = "healthy" ] && \
-               [ "$ZOOKEEPER_STATUS" = "healthy" ]; then
-              echo "All services are healthy."
+            if docker compose exec -T kafka \
+              kafka-topics \
+              --bootstrap-server localhost:9092 \
+              --list \
+              > /dev/null 2>&1; then
+              KAFKA_OK=true
+            fi
+
+            echo "PostgreSQL: $POSTGRES_OK"
+            echo "Kafka: $KAFKA_OK"
+
+            if [ "$POSTGRES_OK" = true ] && [ "$KAFKA_OK" = true ]; then
+              echo "All required services are ready."
               break
             fi
 
             sleep 2
           done
 
+          echo "Final service status:"
           docker compose ps
 
-          test "$(docker inspect -f '{{.State.Health.Status}}' online_retail_postgres)" = "healthy"
-          test "$(docker inspect -f '{{.State.Health.Status}}' kafka)" = "healthy"
-          test "$(docker inspect -f '{{.State.Health.Status}}' zookeeper)" = "healthy"
+          echo "Checking PostgreSQL..."
+          docker compose exec -T postgres \
+            pg_isready \
+            -U postgres \
+            -d online_retail
+
+          echo "Checking Kafka..."
+          docker compose exec -T kafka \
+            kafka-topics \
+            --bootstrap-server localhost:9092 \
+            --list
 
       - name: Create Kafka topics
         run: |
